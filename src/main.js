@@ -8,6 +8,24 @@ const {
 const { log } = Apify.utils;
 log.setLevel(log.LEVELS.DEBUG);
 
+const puppeteerOptions = {
+    headless: true,
+    useChrome: true,
+    stealth: true,
+    stealthOptions: {
+        addPlugins: false,
+        emulateWindowFrame: false,
+        emulateWebGL: false,
+        emulateConsoleDebug: false,
+        addLanguage: false,
+        hideWebDriver: true,
+        hackPermissions: false,
+        mockChrome: false,
+        mockChromeInIframe: false,
+        mockDeviceMemory: false,
+    },
+};
+
 /** Main function */
 Apify.main(async () => {
     // Actor INPUT variable
@@ -81,13 +99,13 @@ Apify.main(async () => {
     }
 
     // Temporary fix, make UI proxy input compatible
-    // if (input.proxyConfig && input.proxyConfig.apifyProxyGroups) {
-    //     for (let i = 0; i < input.proxyConfig.apifyProxyGroups.length; i++) {
-    //         const gSpl = input.proxyConfig.apifyProxyGroups[i].split('-');
-    //         const nGroup = gSpl[gSpl.length - 1];
-    //         input.proxyConfig.apifyProxyGroups[i] = nGroup;
-    //     }
-    // }
+    if (input.proxyConfig && input.proxyConfig.apifyProxyGroups) {
+        for (let i = 0; i < input.proxyConfig.apifyProxyGroups.length; i++) {
+            const gSpl = input.proxyConfig.apifyProxyGroups[i].split('-');
+            const nGroup = gSpl[gSpl.length - 1];
+            input.proxyConfig.apifyProxyGroups[i] = nGroup;
+        }
+    }
 
     // Simulated browser chache
     const cache = {};
@@ -103,8 +121,12 @@ Apify.main(async () => {
         // Browser instance creation.
         launchPuppeteerFunction: () => {
             if (!input.testProxy) {
-                return Apify.launchPuppeteer(input.proxyConfig || { stealth: true });
+                return Apify.launchPuppeteer({
+                    ...puppeteerOptions,
+                    ...input.proxyConfig,
+                });
             }
+
             return getWorkingBrowser(startUrl, input);
         },
 
