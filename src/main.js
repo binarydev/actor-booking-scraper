@@ -30,7 +30,6 @@ const puppeteerOptions = {
 Apify.main(async () => {
     // Actor INPUT variable
     const input = await Apify.getValue('INPUT');
-
     // Actor STATE variable
     const state = await Apify.getValue('STATE') || { crawled: {} };
 
@@ -155,157 +154,151 @@ Apify.main(async () => {
                 }
             }
 
-            try {
-                // Check if page was loaded with correct currency.
-                const curInput = await page.$('input[name="selected_currency"]');
-                const currency = await getAttribute(curInput, 'value');
+            // Check if page was loaded with correct currency.
+            const curInput = await page.$('input[name="selected_currency"]');
+            const currency = await getAttribute(curInput, 'value');
 
-                if (!currency || currency !== input.currency) {
+            if (!currency || currency !== input.currency) {
+                await retireBrowser();
+                throw new Error(`Wrong currency: ${currency}, re-enqueuing...`);
+            }
+
+            if (request.userData.label === 'detail') { // Extract data from the hotel detail page
+                // wait for necessary elements
+                try { await page.waitForSelector('.hprt-occupancy-occupancy-info'); } catch (e) { log.info('occupancy info not found'); }
+
+                const ldElem = await page.$('script[type="application/ld+json"]');
+                const ld = JSON.parse(await getAttribute(ldElem, 'textContent'));
+                await Apify.utils.puppeteer.injectJQuery(page);
+
+                // Check if the page was open through working proxy.
+                const pageUrl = await page.url();
+                if (!input.startUrls && pageUrl.indexOf('label') < 0) {
                     await retireBrowser();
-                    throw new Error(`Wrong currency: ${currency}, re-enqueuing...`);
+                    return;
                 }
 
-                if (request.userData.label === 'detail') { // Extract data from the hotel detail page
-                    // wait for necessary elements
-                    try { await page.waitForSelector('.hprt-occupancy-occupancy-info'); } catch (e) { log.info('occupancy info not found'); }
+                // Exit if core data is not present ot the rating is too low.
+                if (!ld || (ld.aggregateRating && ld.aggregateRating.ratingValue <= (input.minScore || 0))) {
+                    return;
+                }
 
-                    const ldElem = await page.$('script[type="application/ld+json"]');
-                    const ld = JSON.parse(await getAttribute(ldElem, 'textContent'));
+                // Extract the data.
+                log.info('extracting detail...');
+                const detail = await extractDetail(page, ld, input, request.userData);
+                log.info('detail extracted');
+                await Apify.pushData(detail);
+            } else {
+                // Handle hotel list page.
+                const filtered = await isFiltered(page);
+                const settingFilters = input.useFilters && !filtered;
+                const settingMinMaxPrice = input.minMaxPrice !== 'none' && !await isMinMaxPriceSet(page, input);
+                const settingPropertyType = input.propertyType !== 'none' && !await isPropertyTypeSet(page, input);
+                const enqueuingReady = !(settingFilters || settingMinMaxPrice || settingPropertyType);
+
+                // Check if the page was open through working proxy.
+                let pageUrl = await page.url();
+                if (!input.startUrls && pageUrl.indexOf(sortBy) < 0) {
+                    await retireBrowser();
+                    return;
+                }
+
+                // If it's aprropriate, enqueue all pagination pages
+                if (enqueuingReady && (!input.maxPages || input.minMaxPrice || input.propertyType)) {
+                    const baseUrl = await page.url();
+                    if (baseUrl.indexOf('offset') < 0) {
+                        log.info('enqueuing pagination pages...');
+                        const pageSelector = '.bui-pagination__list a:not([aria-current])';
+                        const countSelector = '.sorth1, .sr_header h1, .sr_header h2';
+                        try {
+                            await page.waitForSelector(pageSelector, { timeout: 60000 });
+                            const pageElem = await page.$(pageSelector);
+                            pageUrl = await getAttribute(pageElem, 'href');
+                            await page.waitForSelector(countSelector);
+                            const countElem = await page.$(countSelector);
+                            const countData = (await getAttribute(countElem, 'textContent')).replace(/\.|,|\s/g, '').match(/\d+/);
+                            if (countData) {
+                                const count = Math.ceil(parseInt(countData[0], 10) / 20);
+                                log.info(`pagination pages: ${count}`);
+                                for (let i = 0; i < count; i++) {
+                                    const newUrl = pageUrl.replace(/rows=(\d+)/, 'rows=20').replace(/offset=(\d+)/, `offset=${20 * i}`);
+                                    await requestQueue.addRequest(new Apify.Request({
+                                        url: addUrlParameters(newUrl, input),
+                                        // url: baseUrl + '&rows=20&offset=' + 20*i,
+                                        userData: { label: 'page' },
+                                    }));
+                                }
+                            }
+                        } catch (e) {
+                            log.info(e);
+                            await Apify.setValue('count_error.html', await page.content(), { contentType: 'text/html' });
+                        }
+                    }
+                }
+
+                // If property type is enabled, enqueue necessary page.
+                if (settingPropertyType) {
+                    await setPropertyType(page, input, requestQueue);
+                }
+
+                // If min-max price is enabled, enqueue necessary page.
+                if (settingMinMaxPrice && !settingPropertyType) {
+                    await setMinMaxPrice(page, input, requestQueue);
+                }
+
+                // If filtering is enabled, enqueue necessary pages.
+                if (input.useFilters && !filtered) {
+                    log.info('enqueuing filtered pages...');
+
+                    await enqueueLinks(page, requestQueue, '.filterelement', null, 'page', fixUrl('&', input), async (link) => {
+                        const lText = await getAttribute(link, 'textContent');
+                        return `${lText}_0`;
+                    });
+                }
+
+                if (enqueuingReady && input.simple) { // If simple output is enough, extract the data.
+                    log.info('extracting data...');
+                    await Apify.setValue('page.html', await page.content(), { contentType: 'text/html' });
                     await Apify.utils.puppeteer.injectJQuery(page);
-
-                    // Check if the page was open through working proxy.
-                    const pageUrl = await page.url();
-                    if (!input.startUrls && pageUrl.indexOf('label') < 0) {
-                        await retireBrowser();
-                        return;
-                    }
-
-                    // Exit if core data is not present ot the rating is too low.
-                    if (!ld || (ld.aggregateRating && ld.aggregateRating.ratingValue <= (input.minScore || 0))) {
-                        return;
-                    }
-
-                    // Extract the data.
-                    log.info('extracting detail...');
-                    const detail = await extractDetail(page, ld, input, request.userData);
-                    log.info('detail extracted');
-                    await Apify.pushData(detail);
-                } else {
-                    // Handle hotel list page.
-                    const filtered = await isFiltered(page);
-                    const settingFilters = input.useFilters && !filtered;
-                    const settingMinMaxPrice = input.minMaxPrice !== 'none' && !await isMinMaxPriceSet(page, input);
-                    const settingPropertyType = input.propertyType !== 'none' && !await isPropertyTypeSet(page, input);
-                    const enqueuingReady = !(settingFilters || settingMinMaxPrice || settingPropertyType);
-
-                    // Check if the page was open through working proxy.
-                    let pageUrl = await page.url();
-                    if (!input.startUrls && pageUrl.indexOf(sortBy) < 0) {
-                        await retireBrowser();
-                        return;
-                    }
-
-                    // If it's aprropriate, enqueue all pagination pages
-                    if (enqueuingReady && (!input.maxPages || input.minMaxPrice || input.propertyType)) {
-                        const baseUrl = await page.url();
-                        if (baseUrl.indexOf('offset') < 0) {
-                            log.info('enqueuing pagination pages...');
-                            const pageSelector = '.bui-pagination__list a:not([aria-current])';
-                            const countSelector = '.sorth1, .sr_header h1, .sr_header h2';
-                            try {
-                                await page.waitForSelector(pageSelector, { timeout: 60000 });
-                                const pageElem = await page.$(pageSelector);
-                                pageUrl = await getAttribute(pageElem, 'href');
-                                await page.waitForSelector(countSelector);
-                                const countElem = await page.$(countSelector);
-                                const countData = (await getAttribute(countElem, 'textContent')).replace(/\.|,|\s/g, '').match(/\d+/);
-                                if (countData) {
-                                    const count = Math.ceil(parseInt(countData[0], 10) / 20);
-                                    log.info(`pagination pages: ${count}`);
-                                    for (let i = 0; i < count; i++) {
-                                        const newUrl = pageUrl.replace(/rows=(\d+)/, 'rows=20').replace(/offset=(\d+)/, `offset=${20 * i}`);
-                                        await requestQueue.addRequest(new Apify.Request({
-                                            url: addUrlParameters(newUrl, input),
-                                            // url: baseUrl + '&rows=20&offset=' + 20*i,
-                                            userData: { label: 'page' },
-                                        }));
-                                    }
-                                }
-                            } catch (e) {
-                                log.info(e);
-                                await Apify.setValue('count_error.html', await page.content(), { contentType: 'text/html' });
+                    const result = await page.evaluate(listPageFunction, input);
+                    log.info(`Found ${result.length} results`);
+                    if (result.length > 0) {
+                        const toBeAdded = [];
+                        for (const item of result) {
+                            item.url = addUrlParameters(item.url, input);
+                            if (!state.crawled[item.name]) {
+                                toBeAdded.push(item);
+                                state.crawled[item.name] = true;
                             }
                         }
+                        if (migrating) { await Apify.setValue('STATE', state); }
+                        if (toBeAdded.length > 0) { await Apify.pushData(toBeAdded); }
                     }
-
-                    // If property type is enabled, enqueue necessary page.
-                    if (settingPropertyType) {
-                        await setPropertyType(page, input, requestQueue);
-                    }
-
-                    // If min-max price is enabled, enqueue necessary page.
-                    if (settingMinMaxPrice && !settingPropertyType) {
-                        await setMinMaxPrice(page, input, requestQueue);
-                    }
-
-                    // If filtering is enabled, enqueue necessary pages.
-                    if (input.useFilters && !filtered) {
-                        log.info('enqueuing filtered pages...');
-
-                        await enqueueLinks(page, requestQueue, '.filterelement', null, 'page', fixUrl('&', input), async (link) => {
-                            const lText = await getAttribute(link, 'textContent');
-                            return `${lText}_0`;
-                        });
-                    }
-
-                    if (enqueuingReady && input.simple) { // If simple output is enough, extract the data.
-                        log.info('extracting data...');
-                        await Apify.setValue('page.html', await page.content(), { contentType: 'text/html' });
-                        await Apify.utils.puppeteer.injectJQuery(page);
-                        const result = await page.evaluate(listPageFunction, input);
-                        log.info(`Found ${result.length} results`);
-                        if (result.length > 0) {
-                            const toBeAdded = [];
-                            for (const item of result) {
-                                item.url = addUrlParameters(item.url, input);
-                                if (!state.crawled[item.name]) {
-                                    toBeAdded.push(item);
-                                    state.crawled[item.name] = true;
-                                }
-                            }
-                            if (migrating) { await Apify.setValue('STATE', state); }
-                            if (toBeAdded.length > 0) { await Apify.pushData(toBeAdded); }
-                        }
-                    } else if (enqueuingReady) { // If not, enqueue the detail pages to be extracted.
-                        log.info('enqueuing detail pages...');
-                        // await enqueueLinks(page, requestQueue, '.hotel_name_link', null, 'detail',
-                        //    fixUrl('&', input), (link) => getAttribute(link, 'textContent'));
-                        const urlMod = fixUrl('&', input);
-                        const keyMod = link => getAttribute(link, 'textContent');
-                        const prItem = await page.$('.bui-pagination__info');
-                        const pageRange = (await getAttribute(prItem, 'textContent')).match(/\d+/g);
-                        const firstItem = parseInt(pageRange[0], 10);
-                        const links = await page.$$('.hotel_name_link');
-                        for (let iLink = 0; iLink < links.length; iLink++) {
-                            const link = links[iLink];
-                            const href = await getAttribute(link, 'href');
-                            if (href) {
-                                await requestQueue.addRequest({
-                                    userData: {
-                                        label: 'detail',
-                                        order: iLink + firstItem,
-                                    },
-                                    url: urlMod ? urlMod(href) : href,
-                                    uniqueKey: keyMod ? (await keyMod(link)) : href,
-                                }, { forefront: true });
-                            }
+                } else if (enqueuingReady) { // If not, enqueue the detail pages to be extracted.
+                    log.info('enqueuing detail pages...');
+                    // await enqueueLinks(page, requestQueue, '.hotel_name_link', null, 'detail',
+                    //    fixUrl('&', input), (link) => getAttribute(link, 'textContent'));
+                    const urlMod = fixUrl('&', input);
+                    const keyMod = link => getAttribute(link, 'textContent');
+                    const prItem = await page.$('.bui-pagination__info');
+                    const pageRange = (await getAttribute(prItem, 'textContent')).match(/\d+/g);
+                    const firstItem = parseInt(pageRange[0], 10);
+                    const links = await page.$$('.hotel_name_link');
+                    for (let iLink = 0; iLink < links.length; iLink++) {
+                        const link = links[iLink];
+                        const href = await getAttribute(link, 'href');
+                        if (href) {
+                            await requestQueue.addRequest({
+                                userData: {
+                                    label: 'detail',
+                                    order: iLink + firstItem,
+                                },
+                                url: urlMod ? urlMod(href) : href,
+                                uniqueKey: keyMod ? (await keyMod(link)) : href,
+                            }, { forefront: true });
                         }
                     }
                 }
-            } catch (e) {
-                const screenshotBuffer = await page.screenshot({ fullPage: true });
-                await Apify.setValue('failed_screenshot', screenshotBuffer, { contentType: 'image/png' });
-                throw e;
             }
         },
 
