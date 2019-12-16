@@ -1,5 +1,8 @@
 const Apify = require('apify');
 
+const { log } = Apify.utils;
+log.setLevel(log.LEVELS.DEBUG);
+
 /**
  * Gets attribute as text from a ElementHandle.
  * @param {ElementHandle} element - The element to get attribute from.
@@ -47,35 +50,31 @@ module.exports.addUrlParameters = (url, input) => {
     if (input.checkIn && input.checkOut) {
         const ci = input.checkIn.split(/-|\//);
         const co = input.checkOut.split(/-|\//);
-        //url += `&checkin_year_month_monthday=${ci[2]}-${ci[0]}-${ci[1]}`;
-        //url += `&checkout_year_month_monthday=${co[2]}-${co[0]}-${co[1]}`;
-        //url += `&checkin=${ci[2]}-${ci[1]}-${ci[0]}`;
-        //url += `&checkout=${co[2]}-${co[1]}-${co[0]}`;
         const ciAdd = `&checkout_year=${co[2]}&checkout_month=${co[0]}&checkout_monthday=${co[1]}`;
         const coAdd = `&checkin_year=${ci[2]}&checkin_month=${ci[0]}&checkin_monthday=${ci[1]}`;
-        if(!url.includes(ciAdd)){url += ciAdd;}
-        if(!url.includes(coAdd)){url += coAdd;}
+        if (!url.includes(ciAdd)) { url += ciAdd; }
+        if (!url.includes(coAdd)) { url += coAdd; }
     }
     if (input.currency) {
         const curAdd = `&selected_currency=${input.currency.toUpperCase()}&changed_currency=1&top_currency=1`;
-        if(!url.includes(curAdd)){url += curAdd;}
+        if (!url.includes(curAdd)) { url += curAdd; }
     }
     if (input.language) {
         const lng = input.language.replace('_', '-');
         const lngAdd = `&lang=${lng}`;
-        if(!url.includes(lngAdd)){url += lngAdd;}
+        if (!url.includes(lngAdd)) { url += lngAdd; }
     }
-    if (input.adults) { 
+    if (input.adults) {
         const adAdd = `&group_adults=${input.adults}`;
-        if(!url.includes(adAdd)){url += adAdd;} 
+        if (!url.includes(adAdd)) { url += adAdd; }
     }
-    if (input.children) { 
+    if (input.children) {
         const cdAdd = `&group_children=${input.children}`;
-        if(!url.includes(cdAdd)){url += cdAdd;}
+        if (!url.includes(cdAdd)) { url += cdAdd; }
     }
-    if (input.rooms) { 
+    if (input.rooms) {
         const rmAdd = `&no_rooms=${input.rooms}`;
-        if(!url.includes(rmAdd)){url += rmAdd;}
+        if (!url.includes(rmAdd)) { url += rmAdd; }
     }
     return url.replace('?&', '?');
 };
@@ -88,28 +87,30 @@ module.exports.addUrlParameters = (url, input) => {
 module.exports.getWorkingBrowser = async (startUrl, input) => {
     const sortBy = input.sortBy || 'bayesian_review_score';
     for (let i = 0; i < 1000; i++) {
-        console.log('testing proxy...');
+        log.info('testing proxy...');
         const config = Object.assign({
-            apifyProxySession: 'BOOKING_' + Math.random()
+            apifyProxySession: `BOOKING_${Math.random()}`,
         }, input.proxyConfig || {});
         const browser = await Apify.launchPuppeteer(config);
         const page = await browser.newPage();
-        try{
+
+        try {
             await Apify.utils.puppeteer.hideWebDriver(page);
             await page.goto(startUrl, { timeout: 60000 });
-            //await page.waitForNavigation({ timeout: 60000 });
-        } catch(e) {
-            console.log('invalid proxy, retrying...');
-            console.log(e);
+            // await page.waitForNavigation({ timeout: 60000 });
+        } catch (e) {
+            log.info('invalid proxy, retrying...');
+            log.info(e);
+            // eslint-disable-next-line no-continue
             continue;
         }
         const pageUrl = await page.url();
         if (pageUrl.indexOf(sortBy) > -1 || i === 999) {
-            console.log('valid proxy found');
+            log.info('valid proxy found');
             await page.close();
             return browser;
         }
-        console.log('invalid proxy, retrying...');
+        log.info('invalid proxy, retrying...');
         await browser.close();
     }
 };
@@ -137,82 +138,78 @@ module.exports.fixUrl = fixUrl;
  * Checks if page has some criteria filtering enabled.
  * @param {Page} page - The page to be checked.
  */
-module.exports.isFiltered = (page) => page.$('.filterelement.active');
+module.exports.isFiltered = page => page.$('.filterelement.active');
 
 module.exports.isPropertyTypeSet = async (page, input) => {
-    if(input.propertyType != 'none'){
+    if (input.propertyType !== 'none') {
         const set = await page.evaluate((propertyType) => {
             const filters = Array.from(document.querySelectorAll('.filterelement'));
-            for(const filter of filters){
+            for (const filter of filters) {
                 const label = filter.querySelector('.filter_label');
                 const fText = label.textContent.trim();
-                if(fText == propertyType){
+                if (fText === propertyType) {
                     const cls = filter.className;
-                    if(!cls.includes('active')){return false;}
-                    else{return true;}
+                    if (!cls.includes('active')) {
+                        return false;
+                    }
+
+                    return true;
                 }
             }
+
             return true;
         }, input.propertyType);
+
         return set;
-        /*const filters = await page.$$('.filterelement');
-        //const filters = await (await page.$$('.filteroptions'))[14].$$('.filterelement');
-        for(const filter of filters){
-            const label = await filter.$('.filter_label');
-            const fText = await getAttribute(label, 'textContent');
-            if(fText == input.propertyType){
-                const cls = await getAttribute(filter, 'className');
-                if(!cls.includes('active')){return false;}
-            }
-        }*/
     }
+
     return true;
-}
-                
+};
+
 module.exports.setPropertyType = async (page, input, requestQueue) => {
-    console.log('enqueuing property type page...');
+    log.info('enqueuing property type page...');
     const filters = await page.$$('.filterelement');
-    //const filters = await (await page.$$('.filteroptions'))[14].$$('.filterelement');
     const urlMod = fixUrl('&', input);
-    for(const filter of filters){
+    for (const filter of filters) {
         const label = await filter.$('.filter_label');
         const fText = await getAttribute(label, 'textContent');
-        if(fText == input.propertyType){
-            console.log('Using filter: ' + fText);
+        if (fText === input.propertyType) {
+            log.info(`Using filter 1: ${fText}`);
             const href = await getAttribute(filter, 'href');
-            await requestQueue.addRequest(new Apify.Request({
+            await requestQueue.addRequest({
                 userData: { label: 'page' },
                 url: urlMod(href),
-                uniqueKey: fText + '_' + 0,
-            }));
+                uniqueKey: `${fText}_0`,
+            });
+
             break;
         }
     }
 };
-                
-const pLabels = ["0-50", "50-100", "100-150", "150-200", "200+"];
+
+const pLabels = ['0-50', '50-100', '100-150', '150-200', '200+'];
 module.exports.isMinMaxPriceSet = async (page, input) => {
-    if(input.minMaxPrice != 'none'){
+    if (input.minMaxPrice !== 'none') {
         const fPrices = await (await page.$$('.filteroptions'))[0].$$('.filterelement');
         const index = pLabels.indexOf(input.minMaxPrice);
         const cls = await getAttribute(fPrices[index], 'className');
-        if(!cls.includes('active')){return false;}
+        if (!cls.includes('active')) { return false; }
     }
     return true;
 };
-                
+
 module.exports.setMinMaxPrice = async (page, input, requestQueue) => {
-    console.log('enqueuing min-max price page...');
+    log.info('enqueuing min-max price page...');
     const urlMod = fixUrl('&', input);
     const fPrices = await (await page.$$('.filteroptions'))[0].$$('.filterelement');
     const index = pLabels.indexOf(input.minMaxPrice);
     const label = await (fPrices[index]).$('.filter_label');
     const fText = await getAttribute(label, 'textContent');
-    console.log('Using filter: ' + fText);
+    log.info(`Using filter: ${fText}`);
     const href = await getAttribute(fPrices[index], 'href');
     await requestQueue.addRequest(new Apify.Request({
         userData: { label: 'page' },
         url: urlMod(href),
-        uniqueKey: fText + '_' + 0,
+        uniqueKey: `${fText}_${0}`,
     }));
 };
