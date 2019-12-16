@@ -123,7 +123,7 @@ Apify.main(async () => {
             if (!input.testProxy) {
                 return Apify.launchPuppeteer({
                     ...puppeteerOptions,
-                    ...input.proxyConfig,
+                    proxyUrl: 'http://proxy.apify.com:8000',
                 });
             }
 
@@ -357,6 +357,11 @@ Apify.main(async () => {
                         expires: Date.now() + (maxAge * 1000),
                     };
                 }
+            });
+
+            await page.authenticate({
+                username: `groups-${input.proxyConfig.apifyProxyGroups},session-123`,
+                password: `${process.env.APIFY_PROXY_PASSWORD}`,
             });
 
             // Hide WebDriver and randomize the request.
