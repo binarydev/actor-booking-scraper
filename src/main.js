@@ -97,15 +97,6 @@ Apify.main(async () => {
         }
     }
 
-    // Temporary fix, make UI proxy input compatible
-    if (input.proxyConfig && input.proxyConfig.apifyProxyGroups) {
-        for (let i = 0; i < input.proxyConfig.apifyProxyGroups.length; i++) {
-            const gSpl = input.proxyConfig.apifyProxyGroups[i].split('-');
-            const nGroup = gSpl[gSpl.length - 1];
-            input.proxyConfig.apifyProxyGroups[i] = nGroup;
-        }
-    }
-
     // Simulated browser chache
     const cache = {};
 
@@ -358,8 +349,11 @@ Apify.main(async () => {
                 }
             });
 
+            const proxyUsername = `groups-${input.proxyConfig.apifyProxyGroups},session-123`;
+            log.info(proxyUsername);
+
             await page.authenticate({
-                username: `groups-${input.proxyConfig.apifyProxyGroups},session-123`,
+                username: proxyUsername,
                 password: `${process.env.APIFY_PROXY_PASSWORD}`,
             });
 
