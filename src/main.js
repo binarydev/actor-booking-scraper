@@ -111,9 +111,10 @@ Apify.main(async () => {
         // Browser instance creation.
         launchPuppeteerFunction: () => {
             if (!input.testProxy) {
+                const proxyUrl = Apify.getApifyProxyUrl({ groups: input.proxyConfig.apifyProxyGroups, session: '123', password: process.env.APIFY_PROXY_PASSWORD });
                 return Apify.launchPuppeteer({
                     ...puppeteerOptions,
-                    proxyUrl: 'http://proxy.apify.com:8000',
+                    proxyUrl,
                 });
             }
 
@@ -347,14 +348,6 @@ Apify.main(async () => {
                         expires: Date.now() + (maxAge * 1000),
                     };
                 }
-            });
-
-            const proxyUsername = `groups-${input.proxyConfig.apifyProxyGroups},session-123`;
-            log.info(proxyUsername);
-
-            await page.authenticate({
-                username: proxyUsername,
-                password: `${process.env.APIFY_PROXY_PASSWORD}`,
             });
 
             // Hide WebDriver and randomize the request.
