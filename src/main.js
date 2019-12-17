@@ -10,6 +10,7 @@ log.setLevel(log.LEVELS.DEBUG);
 
 const puppeteerOptions = {
     headless: true,
+    ignoreHTTPSErrors: true,
     useChrome: true,
     stealth: true,
     stealthOptions: {
@@ -30,6 +31,7 @@ const puppeteerOptions = {
 Apify.main(async () => {
     // Actor INPUT variable
     const input = await Apify.getValue('INPUT');
+
     // Actor STATE variable
     const state = await Apify.getValue('STATE') || { crawled: {} };
 
