@@ -83,14 +83,15 @@ module.exports.addUrlParameters = (url, input) => {
  * Finds a browser instance with working proxy for Booking.com.
  * @param {string} startUrl - Booking.com URL to test for loading.
  * @param {Object} input - The Actor input data object.
+ * @param {Object} puppeteerOptions - The puppeteer options to launch.
  */
-module.exports.getWorkingBrowser = async (startUrl, input) => {
+module.exports.getWorkingBrowser = async (startUrl, input, puppeteerOptions) => {
     const sortBy = input.sortBy || 'bayesian_review_score';
     for (let i = 0; i < 1000; i++) {
         log.info('testing proxy...');
         const config = Object.assign({
             apifyProxySession: `BOOKING_${Math.random()}`,
-        }, input.proxyConfig || {});
+        }, input.proxyConfig ? { ...puppeteerOptions, ...input.proxyConfig } : {});
         const browser = await Apify.launchPuppeteer(config);
         const page = await browser.newPage();
 

@@ -111,14 +111,13 @@ Apify.main(async () => {
         // Browser instance creation.
         launchPuppeteerFunction: () => {
             if (!input.testProxy) {
-                const proxyUrl = Apify.getApifyProxyUrl({ groups: input.proxyConfig.apifyProxyGroups, session: '123', password: process.env.APIFY_PROXY_PASSWORD });
                 return Apify.launchPuppeteer({
                     ...puppeteerOptions,
-                    proxyUrl,
+                    ...input.proxyConfig,
                 });
             }
 
-            return getWorkingBrowser(startUrl, input);
+            return getWorkingBrowser(startUrl, input, puppeteerOptions);
         },
 
         // Main page handling function.
