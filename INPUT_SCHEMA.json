@@ -137,7 +137,7 @@
             "title": "Proxy configuration",
             "type": "object",
             "description": "Optionally use Apify Proxy",
-            "default": { "useApifyProxy": true },
+            "prefill": { "useApifyProxy": true, "apifyProxyGroups": ["SHADER"] },
             "editor": "proxy"
         },
         "simple": {
