@@ -1,8 +1,4 @@
-const Apify = require('apify');
 const { getAttribute, addUrlParameters } = require('./util.js');
-
-const { log } = Apify.utils;
-log.setLevel(log.LEVELS.DEBUG);
 
 /**
  * Extracts information about all rooms listed by the hotel using jQuery in browser context.
@@ -61,6 +57,8 @@ const extractRoomsJQuery = () => {
         const priceT = priceE.length > 0 ? priceE.text().replace(/\s|,/g, '').match(/(\d|\.)+/) : null;
         const priceC = priceE.length > 0 ? priceE.text().replace(/\s|,/g, '').match(/[^\d.]+/) : null;
         const cond = row.find('.hprt-conditions li');
+        const taxAndFeeText = row.find('.prd-taxes-and-fees-under-price').eq(0).text().trim();
+        const taxAndFee = taxAndFeeText.match(/\d+/);
 
         const room = { available: true };
         if (roomType) { room.roomType = roomType.text().trim(); }
@@ -68,6 +66,9 @@ const extractRoomsJQuery = () => {
         if (persons) { room.persons = parseInt(persons[0], 10); }
         if (priceT && priceC) {
             room.price = parseFloat(priceT[0]);
+            if (taxAndFee) {
+                room.price += (taxAndFee ? parseFloat(taxAndFee[0]) : 0);
+            }
             // eslint-disable-next-line prefer-destructuring
             room.currency = priceC[0];
             room.features = features;
@@ -110,7 +111,7 @@ module.exports.extractDetail = async (page, ld, input, userData) => {
     const starTitle = await getAttribute(starIcon, 'title');
     const stars = starTitle ? starTitle.match(/\d/) : null;
     const loc = ld.hasMap ? ld.hasMap.match(/%7c(\d+\.\d+),(\d+\.\d+)/) : null;
-    const cInOut = await page.$('.bui-date__subtitle');
+    const cInOut = await page.$('.av-summary-section:nth-child(1) .bui-date-range__item:nth-child(1) .bui-date__subtitle');
     const cMatch = cInOut ? (await getAttribute(cInOut, 'textContent')).match(/\d+:(\d+)/g) : null;
     const img1 = await getAttribute(await page.$('.slick-track img'), 'src');
     const img2 = await getAttribute(await page.$('#photo_wrapper img'), 'src');
@@ -129,8 +130,8 @@ module.exports.extractDetail = async (page, ld, input, userData) => {
         rating: ld.aggregateRating ? ld.aggregateRating.ratingValue : null,
         reviews: ld.aggregateRating ? ld.aggregateRating.reviewCount : null,
         breakfast: await getAttribute(bFast, 'textContent'),
-        checkIn: (cMatch && cMatch.length > 1) ? cMatch[0] : null,
-        checkOut: (cMatch && cMatch.length > 1) ? cMatch[1] : null,
+        checkInFrom: (cMatch && cMatch.length > 1) ? cMatch[0] : null,
+        checkInTo: (cMatch && cMatch.length > 1) ? cMatch[1] : null,
         location: (loc && loc.length > 2) ? { lat: loc[1], lng: loc[2] } : null,
         address,
         image: img1 || img2 || (img3 ? img3[1] : null),
@@ -165,7 +166,7 @@ module.exports.listPageFunction = input => new Promise((resolve) => {
 
     // Extract listing data.
     const result = [];
-    const items = $('.sr_item');
+    const items = $('.sr_property_block.sr_item:not(.soldout_property)');
     let started = 0;
     let finished = 0;
 
@@ -195,6 +196,8 @@ module.exports.listPageFunction = input => new Promise((resolve) => {
                 .replace(/,|\s/g, '');
             const pr = prtxt.match(/\d+/);
             const pc = prtxt.match(/[^\d]+/);
+            const taxAndFeeText = jThis.find('.prd-taxes-and-fees-under-price').eq(0).text().trim();
+            const taxAndFee = taxAndFeeText.match(/\d+/);
             const rat = $(sr).attr('data-score');
             const starAttr = jThis.find('i.star_track svg').attr('class');
             const stars = starAttr ? starAttr.match(/\d/) : null;
@@ -204,8 +207,6 @@ module.exports.listPageFunction = input => new Promise((resolve) => {
             const loc = (buiLink1.length > 0 ? buiLink1 : buiLink2).attr('data-coords');
             const latlng = loc ? loc.split(',') : null;
             const image = jThis.find('.sr_item_photo_link.sr_hotel_preview_track').attr('style');
-            // const imageRegexp = /url\((.*?)\)/gm;
-            // const imageParsed = imageRegexp.exec(image);
             const url = origin + jThis.find('.hotel_name_link').attr('href').replace(/\n/g, '');
             const item = {
                 url: url.split('?')[0],
@@ -213,7 +214,7 @@ module.exports.listPageFunction = input => new Promise((resolve) => {
                 rating: rat ? parseFloat(rat.replace(',', '.')) : null,
                 reviews: nReviews ? parseInt(nReviews[0], 10) : null,
                 stars: stars ? parseInt(stars[0], 10) : null,
-                price: pr ? parseFloat(pr[0]) : null,
+                price: pr ? (parseFloat(pr[0]) + (taxAndFee ? parseFloat(taxAndFee[0]) : 0)) : null,
                 currency: pc ? pc[0].trim() : null,
                 roomType: rl2.length > 0 ? rl2.text().trim() : rl1.eq(0).text().trim(),
                 persons: occ || null,
@@ -221,7 +222,7 @@ module.exports.listPageFunction = input => new Promise((resolve) => {
                 location: latlng ? { lat: latlng[0], lng: latlng[1] } : null,
                 image,
             };
-            if (item.rating && item.rating >= (input.minScore || 0)) { result.push(item); }
+            if (!item.rating || item.rating >= (input.minScore || 0)) { result.push(item); }
             if (++finished >= started) { resolve(result); }
         });
     });

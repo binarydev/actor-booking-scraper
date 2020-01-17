@@ -36,22 +36,24 @@
             "description": "Hotel attribute by which the results will be ordered",
             "default": "bayesian_review_score",
             "enum": [
-                "bayesian_review_score",
-                "popularity",
+                "upsort_bh",
                 "price",
-                "review_score_and_price",
+                "closest_ski_lift_distance",                
                 "class",
                 "class_asc",
-                "distance_from_landmark&dst_landmark=cc"
+                "class_and_price",
+                "distance_from_search",
+                "bayesian_review_score"
             ],
             "enumTitles": [
-                "Rating",
-                "Popularity",
-                "Price",
-                "Rating and price",
-                "Stars",
-                "Stars ascending",
-                "Distance from city centre"
+                "Show homes first",
+                "Price (lowest first)",
+                "Distance to nearest ski lift",
+                "Stars [5->1]",
+                "Stars [1->5]",
+                "Star rating and price",
+                "Distance from city centre",
+                "Top reviewed"
             ]
         },
         "minScore": {
@@ -64,18 +66,17 @@
             "title": "Maximum pagination pages",
             "type": "integer",
             "description": "Number of pagination pages to be crawled",
-            "default": 20,
             "maximum": 1000000
         },
         "checkIn": {
-            "title": "Check-in date (mm-dd-yyyy)",
+            "title": "Check-in date (yyyy-mm-dd)",
             "type": "string",
             "description": "Check-in date",
             "default": "",
             "editor": "textfield"
         },
         "checkOut": {
-            "title": "Check-out date (mm-dd-yyyy)",
+            "title": "Check-out date (yyyy-mm-dd)",
             "type": "string",
             "description": "Check-out date",
             "default": "",
@@ -157,6 +158,14 @@
             "type": "boolean",
             "description": "Before starting crawling, the crawler will try to find a proxy that's not blocked by Booking.",
             "default": false
+        },
+        "extendOutputFunction": {
+            "title": "Extend output function",
+            "type": "string",
+            "nullable": true,
+            "description": "Function that takes a JQuery handle ($) as argument and returns data that will be merged with the default output",
+            "prefill": "($) => { return {} }",
+            "editor": "javascript"
         }
     },
     "required": []

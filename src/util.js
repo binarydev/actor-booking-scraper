@@ -1,13 +1,8 @@
 const Apify = require('apify');
+const moment = require('moment');
 
 const { log } = Apify.utils;
-log.setLevel(log.LEVELS.DEBUG);
 
-/**
- * Gets attribute as text from a ElementHandle.
- * @param {ElementHandle} element - The element to get attribute from.
- * @param {string} attr - Name of the attribute to get.
- */
 const getAttribute = async (element, attr) => {
     try {
         const prop = await element.getProperty(attr);
@@ -31,11 +26,11 @@ module.exports.enqueueLinks = async (page, requestQueue, selector, condition, la
     for (const link of links) {
         const href = await getAttribute(link, 'href');
         if (href && (!condition || await condition(link))) {
-            await requestQueue.addRequest(new Apify.Request({
+            await requestQueue.addRequest({
                 userData: { label },
                 url: urlMod ? urlMod(href) : href,
                 uniqueKey: keyMod ? (await keyMod(link)) : href,
-            }));
+            });
         }
     }
 };
@@ -45,13 +40,15 @@ module.exports.enqueueLinks = async (page, requestQueue, selector, condition, la
  * @param {string} url - Booking.com URL to add the parameters to.
  * @param {Object} input - The Actor input data object.
  */
-module.exports.addUrlParameters = (url, input) => {
+const addUrlParameters = (url, input) => {
     if (url.indexOf('?') < 0) { url += '?'; }
     if (input.checkIn && input.checkOut) {
         const ci = input.checkIn.split(/-|\//);
         const co = input.checkOut.split(/-|\//);
-        const ciAdd = `&checkout_year=${co[2]}&checkout_month=${co[0]}&checkout_monthday=${co[1]}`;
-        const coAdd = `&checkin_year=${ci[2]}&checkin_month=${ci[0]}&checkin_monthday=${ci[1]}`;
+
+        const coAdd = `&checkout=${co[0]}-${co[1]}-${co[2]}`;
+        const ciAdd = `&checkin=${ci[0]}-${ci[1]}-${ci[2]}`;
+
         if (!url.includes(ciAdd)) { url += ciAdd; }
         if (!url.includes(coAdd)) { url += coAdd; }
     }
@@ -78,6 +75,8 @@ module.exports.addUrlParameters = (url, input) => {
     }
     return url.replace('?&', '?');
 };
+
+module.exports.addUrlParameters = addUrlParameters;
 
 /**
  * Finds a browser instance with working proxy for Booking.com.
@@ -208,9 +207,74 @@ module.exports.setMinMaxPrice = async (page, input, requestQueue) => {
     const fText = await getAttribute(label, 'textContent');
     log.info(`Using filter: ${fText}`);
     const href = await getAttribute(fPrices[index], 'href');
-    await requestQueue.addRequest(new Apify.Request({
+    await requestQueue.addRequest({
         userData: { label: 'page' },
         url: urlMod(href),
         uniqueKey: `${fText}_${0}`,
-    }));
+    });
 };
+
+const DATE_FORMAT = 'YYYY-MM-DD';
+module.exports.checkDate = (date) => {
+    if (date) {
+        const match = moment(date, DATE_FORMAT).format(DATE_FORMAT) === date;
+        if (!match) {
+            throw new Error(`Date should be in format ${DATE_FORMAT}`);
+        }
+    }
+};
+
+/**
+ * Tells the crawler to re-enqueue current page and destroy the browser.
+ * Necessary if the page was open through a not working proxy.
+ */
+module.exports.retireBrowser = async (puppeteerPool, page, requestQueue, request) => {
+    await puppeteerPool.retire(page.browser());
+    await requestQueue.addRequest({
+        url: request.url,
+        userData: request.userData,
+        uniqueKey: `${Math.random()}`,
+    });
+};
+
+/**
+ * Extracts information from the detail page and enqueue all pagination pages.
+ *
+ * @param {Page} page - The Puppeteer page object.
+ * @param {RequestQueue} requestQueue - RequestQueue to add the requests to.
+ * @param {Object} input - The Actor input data object.
+ */
+module.exports.enqueueAllPages = async (page, requestQueue, input) => {
+    const baseUrl = await page.url();
+    if (baseUrl.indexOf('offset') < 0) {
+        log.info('enqueuing pagination pages...');
+        const pageSelector = '.bui-pagination__list a:not([aria-current])';
+        const countSelector = '.sorth1, .sr_header h1, .sr_header h2';
+        try {
+            await page.waitForSelector(pageSelector, { timeout: 60000 });
+            const pageElem = await page.$(pageSelector);
+            const pageUrl = await getAttribute(pageElem, 'href');
+            await page.waitForSelector(countSelector);
+            const countElem = await page.$(countSelector);
+            const countData = (await getAttribute(countElem, 'textContent')).replace(/\.|,|\s/g, '').match(/\d+/);
+
+            if (countData) {
+                const count = Math.ceil(parseInt(countData[0], 10) / 25);
+                log.info(`pagination pages: ${count}`);
+
+                for (let i = 0; i < count; i++) {
+                    const newUrl = pageUrl.replace(/rows=(\d+)/, 'rows=25').replace(/offset=(\d+)/, `offset=${25 * i}`);
+                    await requestQueue.addRequest({
+                        url: addUrlParameters(newUrl, input),
+                        userData: { label: 'page' },
+                    });
+                }
+            }
+        } catch (e) {
+            log.info(e);
+            await Apify.setValue('count_error.html', await page.content(), { contentType: 'text/html' });
+        }
+    }
+};
+
+module.exports.isObject = val => typeof val === 'object' && val !== null && !Array.isArray(val);

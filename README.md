@@ -38,7 +38,8 @@ Input is a JSON object with the following properties:
     "sortBy": BOOKING_SORT_TYPE,
     "propertyType": PROPERTY_TYPE,
     "minMaxPrice": MIN_MAX_PRICE_RANGE,
-    "proxyConfig": APIFY_PROXY_CONFIG
+    "proxyConfig": APIFY_PROXY_CONFIG,
+    "extendOutputFunction": EXTEND_OUTPUT_FUNCTION
 }
 ```
 
@@ -48,8 +49,8 @@ Input is a JSON object with the following properties:
 * `useFilters` sets if the crawler should utilize criteria filters to overcome the limit for 1000 results.  
 * `minScore` specifies the minimum allowed rating of the hotel to be included in results, default is `8.4`.  
 * `maxPages` sets maximum number of pagination pages to be crawled.  
-* `checkIn` check-in date in the mm-dd-yyyy format.  
-* `checkOut` check-out date in the mm-dd-yyyy format.  
+* `checkIn` check-in date in the yyyy-mm-dd format.  
+* `checkOut` check-out date in the yyyy-mm-dd format.  
 * `rooms` number of rooms to be set for the search.  
 * `adults` number of adults to be set for the search.  
 * `children` number of children to be set for the search.  
@@ -87,28 +88,29 @@ Must be one of the following:
     "200+"
 ]
 ```
-* `proxyConfig` defines Apify proxy configuration, it should respect this format:  
+* `proxyConfig` defines Apify proxy configuration and default group is SHADER, it should respect this format:  
 ```javascript
 "proxyConfig": {
     "useApifyProxy": true,
     "apifyProxyGroups": [
-        "RESIDENTIAL",
-        ...
+        "SHADER"
     ]
 }
 ```  
 * `sortBy` sets a hotel attribute by which the results will be ordered, must be one of the following.
 ```javascript
 [
-    "bayesian_review_score",    // Rating
-    "popularity",               // Popularity
-    "price",                    // Price
-    "review_score_and_price",   // Rating and price
-    "class",                    // Stars
-    "class_asc",                // Stars ascending
-    "distance_from_landmark"    // Distance from city centre
+    "upsort_bh",                 // Show homes first
+    "price",                     // Price (lowest first)
+    "closest_ski_lift_distance", // Distance to nearest ski lift
+    "class",                     // Stars [5->1]
+    "class_asc",                 // Stars [1->5]
+    "class_and_price",           // Star rating and price
+    "distance_from_search"       // Distance from city centre
+    "bayesian_review_score"      // Top reviewed
 ]
 ```
+* `extendOutputFunction` Function that takes a JQuery handle ($) as argument and returns data that will be merged with the default output, only when `simple` = false. More information in [Extend output function](#extend-output-function).
   
 ## Starting with URLs
 
@@ -214,7 +216,7 @@ contain data only if the `checkIn` and `checkOut` INPUT attributes are set.
 ## Notes
 
 * The actor will not work without proxy, i.e. if you try running it without setting a proxy, it will
-  fail with a message explaining exactly that.
+  fail with a message explaining exactly that. There can be a slight difference in price depending on the proxy you use.
 
 * Booking.com will only display maximum of 1000 results, if you need to circumvent this limitation,  
   you can utilize the `useFilters` INPUT attribute. However, in such case it will not be possible  
@@ -222,3 +224,6 @@ contain data only if the `checkIn` and `checkOut` INPUT attributes are set.
   
 * If you need to get data about specific rooms, the crawler needs to be started with `checkIn` and  
   `checkOut` INPUT attributes (Booking.com only shows room info for specific dates).
+
+* Booking.com sometimes returns some suggested hotels that are outside of the expected city/region as a recommendation.
+  The ator will return all of them in the crawling results so you may recognize more results than your search.
