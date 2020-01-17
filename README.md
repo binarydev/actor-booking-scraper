@@ -173,8 +173,8 @@ contain data only if the `checkIn` and `checkOut` INPUT attributes are set.
   "rating": 10,
   "reviews": 7,
   "breakfast": null,
-  "checkIn": "15:00",
-  "checkOut": "00:00",
+  "checkInFrom": "15:00",
+  "checkInTo": "00:00",
   "location": {
     "lat": "50.0903216",
     "lng": "14.4199419"
@@ -227,3 +227,6 @@ contain data only if the `checkIn` and `checkOut` INPUT attributes are set.
 
 * Booking.com sometimes returns some suggested hotels that are outside of the expected city/region as a recommendation.
   The ator will return all of them in the crawling results so you may recognize more results than your search.
+
+## Epilogue
+Thank you for trying my actor. I will be very glad for a feedback that you can send to my email `dtrungtin@gmail.com`. If you find any bug, please create an issue on the [Github page](https://github.com/dtrungtin/actor-booking-scraper).
