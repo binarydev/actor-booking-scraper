@@ -272,7 +272,6 @@ module.exports.enqueueAllPages = async (page, requestQueue, input) => {
             }
         } catch (e) {
             log.info(e);
-            await Apify.setValue('count_error.html', await page.content(), { contentType: 'text/html' });
         }
     }
 };
